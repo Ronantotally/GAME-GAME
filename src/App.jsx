@@ -109,8 +109,10 @@ But reject answers that are:
 - Only partially correct in a misleading way
 - A different entity entirely
 
+CRITICAL: If the guess is wrong, your response message must NOT hint at, reference, or give any clues about the correct answer. Do not mention how close or far the guess is. Do not compare the guess to the answer. Just give a generic encouraging message like "Not quite!", "Nope, keep trying!", "Wrong, but don't give up!", etc.
+
 Return ONLY valid JSON with no markdown formatting, no code fences, no preamble:
-{ "correct": true or false, "response": "a short witty/encouraging message (1-2 sentences)" }`
+{ "correct": true or false, "response": "a short witty/encouraging message (1-2 sentences, NO hints about the answer)" }`
 
   const text = await callClaude([{ role: 'user', content: prompt }])
   const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
