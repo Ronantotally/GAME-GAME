@@ -20,24 +20,15 @@ const MAX_CLUES = 20
 const POINTS_PER_CLUE = 10
 const MAX_POINTS = 200
 
-// ─── Claude API ──────────────────────────────────────────────────────────────
+// ─── Claude API (routed through Vercel serverless proxy) ─────────────────────
 
-async function callClaude(apiKey, messages, retries = 2) {
+async function callClaude(messages, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/claude', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          messages,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
       })
       if (!response.ok) {
         const err = await response.text()
@@ -55,7 +46,7 @@ async function callClaude(apiKey, messages, retries = 2) {
   }
 }
 
-async function generatePuzzle(apiKey, category, difficulty, usedAnswers) {
+async function generatePuzzle(category, difficulty, usedAnswers) {
   const categoryInstruction = category === 'random'
     ? 'Pick from any category: people, places, things, or events.'
     : `The subject must be from the "${category}" category.`
@@ -92,7 +83,7 @@ Rules for clues:
 - Never include the answer's name in any clue
 - Each clue should add new information, not repeat previous clues`
 
-  const text = await callClaude(apiKey, [{ role: 'user', content: prompt }])
+  const text = await callClaude([{ role: 'user', content: prompt }])
 
   // Parse JSON - handle potential markdown code fences
   const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
@@ -104,7 +95,7 @@ Rules for clues:
   return puzzle
 }
 
-async function judgeGuess(apiKey, guess, correctAnswer) {
+async function judgeGuess(guess, correctAnswer) {
   const prompt = `You are a judge for a guessing game. The correct answer is "${correctAnswer}". The player guessed: "${guess}".
 
 Determine if the guess is correct. Be generous with:
@@ -121,7 +112,7 @@ But reject answers that are:
 Return ONLY valid JSON with no markdown formatting, no code fences, no preamble:
 { "correct": true or false, "response": "a short witty/encouraging message (1-2 sentences)" }`
 
-  const text = await callClaude(apiKey, [{ role: 'user', content: prompt }])
+  const text = await callClaude([{ role: 'user', content: prompt }])
   const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
   return JSON.parse(cleaned)
 }
@@ -199,45 +190,6 @@ function AnimatedNumber({ value, duration = 600 }) {
   }, [value, duration])
 
   return <span>{display}</span>
-}
-
-// ─── API Key Modal ───────────────────────────────────────────────────────────
-
-function ApiKeyModal({ onSubmit }) {
-  const [key, setKey] = useState('')
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 max-w-md w-full border border-white/20 shadow-2xl">
-        <div className="text-center mb-6">
-          <h1 className="font-display text-4xl mb-2 bg-gradient-to-r from-game-pink via-game-purple to-game-blue bg-clip-text text-transparent">
-            20 Clues
-          </h1>
-          <p className="text-white/60">Enter your Anthropic API key to play</p>
-        </div>
-        <div className="space-y-4">
-          <input
-            type="password"
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            placeholder="sk-ant-..."
-            className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-game-purple focus:border-transparent"
-            onKeyDown={e => e.key === 'Enter' && key.trim() && onSubmit(key.trim())}
-          />
-          <button
-            onClick={() => key.trim() && onSubmit(key.trim())}
-            disabled={!key.trim()}
-            className="w-full py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-game-purple to-game-pink hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Start Playing
-          </button>
-          <p className="text-white/40 text-xs text-center">
-            Your key stays in your browser and is only sent to the Anthropic API.
-          </p>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ─── Home Screen ─────────────────────────────────────────────────────────────
@@ -356,7 +308,7 @@ function HomeScreen({ onStart, stats }) {
 
 // ─── Game Screen ─────────────────────────────────────────────────────────────
 
-function GameScreen({ puzzle, apiKey, onFinish, sessionScore }) {
+function GameScreen({ puzzle, onFinish, sessionScore }) {
   const [revealedCount, setRevealedCount] = useState(1)
   const [guess, setGuess] = useState('')
   const [isJudging, setIsJudging] = useState(false)
@@ -387,7 +339,7 @@ function GameScreen({ puzzle, apiKey, onFinish, sessionScore }) {
     setWrongMessage('')
 
     try {
-      const result = await judgeGuess(apiKey, guess.trim(), puzzle.answer)
+      const result = await judgeGuess(guess.trim(), puzzle.answer)
       if (result.correct) {
         onFinish({
           won: true,
@@ -657,9 +609,6 @@ function ErrorScreen({ message, onRetry, onBack }) {
 // ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [apiKey, setApiKey] = useState(() => {
-    try { return sessionStorage.getItem('twenty_clues_key') || '' } catch { return '' }
-  })
   const [screen, setScreen] = useState('home') // home | loading | game | results | error
   const [puzzle, setPuzzle] = useState(null)
   const [result, setResult] = useState(null)
@@ -673,11 +622,6 @@ export default function App() {
     totalCluesUsed: 0,
   })
 
-  const handleApiKey = useCallback((key) => {
-    setApiKey(key)
-    try { sessionStorage.setItem('twenty_clues_key', key) } catch {}
-  }, [])
-
   const startGame = useCallback(async (category, difficulty) => {
     setLastCategory(category)
     setLastDifficulty(difficulty)
@@ -685,14 +629,14 @@ export default function App() {
     setErrorMsg('')
 
     try {
-      const p = await generatePuzzle(apiKey, category, difficulty, usedAnswers)
+      const p = await generatePuzzle(category, difficulty, usedAnswers)
       setPuzzle(p)
       setScreen('game')
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to generate puzzle. Check your API key and try again.')
+      setErrorMsg(err.message || 'Failed to generate puzzle. Please try again.')
       setScreen('error')
     }
-  }, [apiKey, usedAnswers])
+  }, [usedAnswers])
 
   const handleFinish = useCallback((res) => {
     setResult(res)
@@ -715,11 +659,6 @@ export default function App() {
     setScreen('home')
   }, [])
 
-  // Show API key screen if no key
-  if (!apiKey) {
-    return <ApiKeyModal onSubmit={handleApiKey} />
-  }
-
   switch (screen) {
     case 'home':
       return <HomeScreen onStart={startGame} stats={stats} />
@@ -733,7 +672,6 @@ export default function App() {
       return (
         <GameScreen
           puzzle={puzzle}
-          apiKey={apiKey}
           onFinish={handleFinish}
           sessionScore={stats.totalScore}
         />
